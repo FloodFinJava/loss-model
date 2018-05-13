@@ -49,6 +49,8 @@ def load_loss_curves():
             # convert to int at the given resolution
             loss_curve1.index = loss_curve1.index / LOSS_CURVE_RES
             loss_curve1.index = loss_curve1.index.map(np.int32)
+            # Remove duplicates
+            loss_curve1 = loss_curve1[~loss_curve1.index.duplicated(keep='first')]
             # add to dict
             loss_curves[basename] = loss_curve1
     return loss_curves
@@ -63,10 +65,11 @@ def calculate_perc_loss(asset_row, depth_col, loss_curves):
     curve_name = str(asset_row['type_code'])
     if curve_name in loss_curves.keys():
         loss_curve = loss_curves[curve_name]
+        depth_cm = int(asset_row[depth_col] / LOSS_CURVE_RES)
         try:
-            return loss_curve.at[int(asset_row[depth_col] / LOSS_CURVE_RES)]
+            return loss_curve.at[depth_cm]
         except KeyError:
-            print("Water depth {} not found in loss curve {}".format(depth, curve_name))
+            print("Water depth {} not found in loss curve {}".format(asset_row[depth_col], curve_name))
     else:
         print("Loss curve <{}> unknown".format(curve_name))
 
@@ -79,23 +82,28 @@ def apply_losses(asset_map, loss_curves):
         apply that % loss to the asset value
         Keep the asset loss in the geodataframe
     """
+    # Create metadata
+    asset_map.stats = {}
+    asset_value_col = conf['input']['assets']['value']
     for intensity in conf['input']['assets']['intensities']:
         intensity_col = intensity + conf['input']['assets']['intensity_suffix']
-        print(conf['input']['assets'])
-        asset_value_col = conf['input']['assets']['value']
         perc_loss_col = intensity + conf['output']['perc_loss_suffix']
         loss_value_col = intensity + conf['output']['loss_value_suffix']
-        asset_map[perc_loss_col] = asset_map.apply(calculate_perc_loss,
-                                                      axis=1, depth_col=intensity_col,
-                                                      loss_curves=loss_curves)
+        # Percentage of losses
+        asset_map[perc_loss_col] = asset_map.apply(calculate_perc_loss, axis=1,
+                                                   depth_col=intensity_col,
+                                                   loss_curves=loss_curves)
+        # Value of losses
         asset_map[loss_value_col] = asset_map[perc_loss_col] * asset_map[asset_value_col]
-    print(asset_map.head())
-
+        # Save metadata
+        asset_map.stats[loss_value_col + '_sum'] = asset_map[loss_value_col].sum()
+        asset_map.stats[intensity + '_flooded_assets'] = asset_map[intensity_col].astype(bool).sum()
 
 def main():
     loss_curves = load_loss_curves()
     asset_map = gpd.read_file(ASSETS_MAP_PATH)
     apply_losses(asset_map, loss_curves)
+    asset_map.to_file(conf['output']['file_name'], driver='GPKG')
 
 
 if __name__ == "__main__":
