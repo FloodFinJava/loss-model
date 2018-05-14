@@ -7,6 +7,7 @@ import os
 import sys
 import csv
 
+import json
 import toml
 import geopandas as gpd
 import pandas as pd
@@ -82,10 +83,12 @@ def apply_losses(asset_map, loss_curves):
         apply that % loss to the asset value
         Keep the asset loss in the geodataframe
     """
-    # Create metadata
-    asset_map.stats = {}
     asset_value_col = conf['input']['assets']['value']
-    for intensity in conf['input']['assets']['intensities']:
+    intensities = conf['input']['assets']['intensities']
+    # Create metadata and keep total assets value
+    stats = {}
+    stats[asset_value_col + '_sum'] = float(asset_map[asset_value_col].sum())
+    for intensity in intensities:
         intensity_col = intensity + conf['input']['assets']['intensity_suffix']
         perc_loss_col = intensity + conf['output']['perc_loss_suffix']
         loss_value_col = intensity + conf['output']['loss_value_suffix']
@@ -96,15 +99,22 @@ def apply_losses(asset_map, loss_curves):
         # Value of losses
         asset_map[loss_value_col] = asset_map[perc_loss_col] * asset_map[asset_value_col]
         # Save metadata
-        asset_map.stats[loss_value_col + '_sum'] = asset_map[loss_value_col].sum()
-        asset_map.stats[intensity + '_flooded_assets'] = asset_map[intensity_col].astype(bool).sum()
+        stats[loss_value_col + '_sum'] = float(asset_map[loss_value_col].sum())
+        stats[intensity + '_flooded_assets'] = int(asset_map[intensity_col].astype(bool).sum())
+    return stats
 
 def main():
     loss_curves = load_loss_curves()
     asset_map = gpd.read_file(ASSETS_MAP_PATH)
-    apply_losses(asset_map, loss_curves)
-    asset_map.to_file(conf['output']['file_name'], driver='GPKG')
-
+    stats = apply_losses(asset_map, loss_curves)
+    # Save map to file
+    map_file_name = conf['output']['file_name'] + conf['output']['map_extension']
+    asset_map.to_file(map_file_name, driver='GPKG')
+    # Save stats to file
+    print(stats)
+    stats_file_name = conf['output']['file_name'] + conf['output']['stats_extension']
+    with open(stats_file_name, 'w') as stats_file:
+        json.dump(stats, stats_file)
 
 if __name__ == "__main__":
     sys.exit(main())
