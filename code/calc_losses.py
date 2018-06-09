@@ -24,11 +24,13 @@ conf = toml.loads(toml_string)
 ASSETS_MAP_PATH = os.path.abspath(os.path.join(conf['input']['assets']['path'],
                                                conf['input']['assets']['map_name']))
 
+
 LOSS_CURVES_DIR = conf['input']['loss_curves']['path']
 LOSS_CURVES_EXTENSION = conf['input']['loss_curves']['extension']
 LOSS_CURVE_RES = conf['input']['loss_curves']['index_resolution']
 LOSS_CURVE_MAX = conf['input']['loss_curves']['max_index']
 LOSS_CURVES_COL_NAMES = conf['input']['loss_curves']['col_names']
+
 
 def load_loss_curves():
     """Load loss curves
@@ -63,7 +65,7 @@ def calculate_perc_loss(asset_row, depth_col, loss_curves):
     return a percentage of loss
     """
     # If the curve is found
-    curve_name = str(asset_row['type_code'])
+    curve_name = str(asset_row['loss_curve'])
     if curve_name in loss_curves.keys():
         loss_curve = loss_curves[curve_name]
         depth_cm = int(asset_row[depth_col] / LOSS_CURVE_RES)
