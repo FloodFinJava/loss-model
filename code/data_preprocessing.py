@@ -5,7 +5,6 @@ import io
 import os
 
 import toml
-import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
@@ -50,7 +49,7 @@ def get_flooded_assets(asset_map, flood_maps_dict, output_map):
             map_null = map_name + "_fix"
             exp = "{o} = if({i} <= 0, 0, {i})".format(o=map_null, i=map_name)
             gscript.run_command('r.mapcalc', expression=exp, overwrite=True)
-            # Get stats
+            # write raster stats as column in the vector
             gscript.run_command('v.rast.stats', map=vect_map, raster=map_null,
                                 column_prefix=return_period, method='maximum',
                                 overwrite=True)
@@ -59,17 +58,34 @@ def get_flooded_assets(asset_map, flood_maps_dict, output_map):
                             output=output_map, overwrite=True)
 
 
+def populate_value_and_curve(asset_map, col_value, col_curve):
+    gdf = gpd.read_file(asset_map)
+    # set arbitrary values
+    high_value = ('hospital', 'university', 'college', 'research_institute')
+    gdf.loc[gdf.amenity.isin(high_value), col_value] = 700000
+    gdf.loc[~gdf.amenity.isin(high_value), col_value] = 100000
+    # set arbitrary loss curves
+    high_rise =  ('university', 'college', 'library', 'hospital')
+    gdf.loc[gdf.amenity.isin(high_rise), col_curve] = "high_rise"
+    gdf.loc[~gdf.amenity.isin(high_rise), col_curve] = "low_rise"
+    # Remove current file and write it again with the new columns
+    os.remove(asset_map)
+    gdf.to_file(asset_map, driver='GPKG')
+
+
 def main():
     # Get info from configuration file
     base_path = conf['input']['base_path']
     osm_input = os.path.join(base_path, conf['input']['osm']['raw'])
-    amenity_cat = conf['input']['osm']['amenity_cat']
+    amenity_cats = conf['input']['osm']['amenity_cat']
     col_keep = conf['input']['osm']['col_keep']
     osm_clean = os.path.join(base_path, conf['input']['osm']['clean'])
     flooded_assets_map = os.path.join(base_path, conf['input']['assets']['path'],
                                       conf['input']['assets']['map_name'])
+    col_value = conf['input']['assets']['value']
+    col_curve = conf['input']['assets']['loss_curve']
     # Save cleaned map from osm
-    # gdf_clean = clean_osm(osm_input, amenity_cat, col_keep)
+    # gdf_clean = clean_osm(osm_input, amenity_cats, col_keep)
     # gdf_clean.to_file(osm_clean, driver='GPKG')
 
     # get the flooded depth for each raster map
@@ -84,6 +100,9 @@ def main():
                                 map_name)
         flood_maps_dict[return_period] = map_path
     get_flooded_assets(osm_clean, flood_maps_dict, flooded_assets_map)
+
+    # Add asset value and loss_curves
+    populate_value_and_curve(flooded_assets_map, col_value, col_curve)
 
 
 
